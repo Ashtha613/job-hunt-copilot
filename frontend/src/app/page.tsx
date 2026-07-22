@@ -34,7 +34,7 @@ export default function Home() {
     formData.append("file", file);
 
     try {
-      const response = await fetch("http://127.0.0.1:8000/upload-resume", {
+      const response = await fetch("https://job-hunt-copilot-egwq.onrender.com/upload-resume", {
         method: "POST",
         body: formData,
       });
@@ -95,7 +95,7 @@ export default function Home() {
          locationQuery += " in " + activeLocations.join(" OR ");
       }
       
-      const response = await fetch(`http://127.0.0.1:8000/search-jobs?role=${combinedRoles}&location=${locationQuery}`);
+      const response = await fetch(`https://job-hunt-copilot-egwq.onrender.com/search-jobs?role=${combinedRoles}&location=${locationQuery}`);
       const data = await response.json();
       
       if (!data.jobs_found || data.jobs_found.length === 0) {
@@ -119,21 +119,21 @@ export default function Home() {
     setGeneratedEmail("");
 
     try {
-      const keywordRes = await fetch("http://127.0.0.1:8000/extract-keywords", {
+      const keywordRes = await fetch("https://job-hunt-copilot-egwq.onrender.com/extract-keywords", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ description: job.description })
       });
       const skills = (await keywordRes.json()).extracted_skills;
 
-      const alignRes = await fetch("http://127.0.0.1:8000/align-resume", {
+      const alignRes = await fetch("https://job-hunt-copilot-egwq.onrender.com/align-resume", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ resume_text: resumeText, target_skills: skills })
       });
       const alignedPoints = (await alignRes.json()).aligned_resume;
 
-      const emailRes = await fetch("http://127.0.0.1:8000/draft-email", {
+      const emailRes = await fetch("https://job-hunt-copilot-egwq.onrender.com/draft-email", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ company_name: job.company, role_title: job.title, resume_points: alignedPoints })
