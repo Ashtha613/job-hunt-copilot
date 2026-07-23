@@ -47,16 +47,17 @@ async def upload_resume(file: UploadFile = File(...)):
 
         print("🚦 2. PDF read successfully! Sending to AI...")
         
-        # REVERTED PROMPT: Back to your original, proven logic
         prompt = f"""
         You are an expert technical recruiter. Analyze the following resume text and first determine the candidate's exact years of experience and career level (e.g., Entry-level, Junior, Mid-level, Senior). 
         
         Based strictly on their actual demonstrated experience, suggest 5 realistic job titles they are currently eligible for. 
+        
+        CRITICAL RULES:
+        - If they have under 2 years of experience (or are a student/recent grad), you MUST prefix EVERY single suggestion with "Junior" or "Entry-Level" (e.g., "Junior React Developer"). You are strictly forbidden from suggesting standard roles (like "Software Engineer") without these prefixes for beginners.
         - Do NOT suggest "Senior", "Lead", "Principal", or "Manager" roles unless the resume clearly shows 5+ years of relevant experience.
-        - If they are a student, recent graduate, or have under 2 years of experience, only suggest "Junior", "Entry-level", or standard roles (e.g., "Software Engineer" rather than "Senior Software Engineer").
         
         Respond ONLY with a raw JSON array of strings. Do not include markdown, backticks, or any conversational text.
-        Example output: ["Junior Frontend Developer", "React Developer", "Web Developer"]
+        Example output: ["Junior Frontend Developer", "Entry-Level React Developer", "Junior Web Developer"]
         
         Resume text:
         {resume_text}
@@ -116,7 +117,6 @@ async def search_jobs(role: str, location: str):
             if "junior" in single_role.lower() or "entry" in single_role.lower() or "intern" in single_role.lower():
                 query += " -senior -lead -principal -manager -director"
             
-            # BUG FIX: This now ensures your location (like "India") is always attached to the query, even if it is a Remote role.
             if single_loc:
                 query += f" in {single_loc}"
                 
