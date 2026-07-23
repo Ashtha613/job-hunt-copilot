@@ -10,7 +10,6 @@ export default function Home() {
   const [suggestedRoles, setSuggestedRoles] = useState<string[]>([]);
   const [selectedRoles, setSelectedRoles] = useState<string[]>([]);
   
-  // UX FIX: Set default to On-site
   const [workModel, setWorkModel] = useState("On-site");
   const [loc1, setLoc1] = useState("");
   const [loc2, setLoc2] = useState("");
@@ -43,7 +42,6 @@ export default function Home() {
       });
       const data = await response.json();
       
-      // UX FIX: Human-readable error mapping
       if (data.error) {
         const errorString = data.error.toLowerCase();
         if (errorString.includes("429") || errorString.includes("quota") || errorString.includes("limit")) {
@@ -81,7 +79,6 @@ export default function Home() {
       return;
     }
     
-    // UX FIX: Stricter location validation for On-site and Hybrid
     const activeLocations = [loc1, loc2, loc3].filter(l => l.trim() !== "");
     if (workModel !== "Remote" && !loc1.trim()) {
       setWarning(`Please enter at least one primary city for your ${workModel} job search!`);
@@ -167,7 +164,8 @@ export default function Home() {
         <div className="bg-white border border-[#82b8b9]/30 shadow-sm p-8 rounded-2xl space-y-6">
            <div className="flex items-center space-x-3">
              <div className="h-8 w-8 rounded-full bg-[#185e77] flex items-center justify-center text-white font-bold text-sm">1</div>
-             <h2 className="text-xl font-bold text-[#185e77] tracking-tight">AI Resume Profiler</h2>
+             {/* Added the * directly to the section title */}
+             <h2 className="text-xl font-bold text-[#185e77] tracking-tight">AI Resume Profiler <span className="text-red-500">*</span></h2>
            </div>
            
            <div className="border-2 border-dashed border-[#82b8b9] bg-[#f0f6f7]/50 hover:bg-[#f0f6f7] transition-colors duration-200 rounded-xl p-8 text-center relative">
@@ -181,7 +179,9 @@ export default function Home() {
 
            {suggestedRoles?.length > 0 && (
              <div className="bg-[#f0f6f7] p-5 rounded-xl border border-[#82b8b9]/40 mt-6">
-               <label className="block text-sm font-semibold mb-3 text-[#185e77] uppercase tracking-wider">Select Target Roles <span className="text-red-500">*</span></label>
+               {/* Removed the * from here and added the instructional message */}
+               <label className="block text-sm font-semibold text-[#185e77] uppercase tracking-wider">Select Target Roles</label>
+               <p className="text-sm text-[#10899e] mb-4 mt-1 font-medium">Please select at least one role below <span className="text-red-500">*</span></p>
                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                  {suggestedRoles.map((role) => (
                    <label key={role} className="flex items-center space-x-3 bg-white p-3.5 rounded-lg cursor-pointer hover:border-[#10899e] border border-[#82b8b9]/50 transition-all shadow-sm">
@@ -204,7 +204,6 @@ export default function Home() {
            <div>
              <label className="block text-sm font-semibold mb-3 text-[#185e77] uppercase tracking-wider">Work Model</label>
              <div className="flex p-1 bg-[#f0f6f7] rounded-xl border border-[#82b8b9]/40">
-               {/* UX FIX: Reordered sequence to On-site, Hybrid, Remote */}
                {["On-site", "Hybrid", "Remote"].map(model => (
                  <button key={model} onClick={() => setWorkModel(model)} className={`flex-1 py-2.5 rounded-lg font-semibold text-sm transition-all duration-200 ${workModel === model ? "bg-white text-[#10899e] shadow-sm border border-[#82b8b9]/60" : "text-[#82b8b9] hover:text-[#185e77] hover:bg-white/50"}`}>
                    {model}
@@ -213,21 +212,18 @@ export default function Home() {
              </div>
            </div>
 
-           {/* UX FIX: Conditional Rendering for Locations based on Remote vs Hybrid/On-Site */}
            <div className="space-y-3">
+             {/* Removed the * from this main label */}
              <label className="block text-sm font-semibold mb-1 text-[#185e77] uppercase tracking-wider mt-4">
-               {workModel === "Remote" ? (
-                 "Target Timezone / Region (Optional)"
-               ) : (
-                 <>Target Cities <span className="text-red-500">*</span></>
-               )}
+               {workModel === "Remote" ? "Target Timezone / Region" : "Target Cities"}
              </label>
 
              {workModel === "Remote" ? (
-               <input className="w-full p-3.5 bg-white rounded-lg border border-[#82b8b9] focus:border-[#10899e] focus:ring-1 focus:ring-[#10899e] focus:outline-none transition-all placeholder-[#82b8b9] text-[#185e77] shadow-sm" placeholder="e.g. US Only, EST Timezone (Leave blank for global)" value={loc1} onChange={(e) => setLoc1(e.target.value)} />
+               <input className="w-full p-3.5 bg-white rounded-lg border border-[#82b8b9] focus:border-[#10899e] focus:ring-1 focus:ring-[#10899e] focus:outline-none transition-all placeholder-[#82b8b9] text-[#185e77] shadow-sm" placeholder="e.g. US Only, EST Timezone (Optional)" value={loc1} onChange={(e) => setLoc1(e.target.value)} />
              ) : (
                <>
-                 <input className="w-full p-3.5 bg-white rounded-lg border border-[#82b8b9] focus:border-[#10899e] focus:ring-1 focus:ring-[#10899e] focus:outline-none transition-all placeholder-[#82b8b9] text-[#185e77] shadow-sm" placeholder="Location 1 (Required, e.g. Austin, TX)" value={loc1} onChange={(e) => setLoc1(e.target.value)} />
+                 {/* Added the * directly into the placeholder for Location 1 */}
+                 <input className="w-full p-3.5 bg-white rounded-lg border border-[#82b8b9] focus:border-[#10899e] focus:ring-1 focus:ring-[#10899e] focus:outline-none transition-all placeholder-[#82b8b9] text-[#185e77] shadow-sm" placeholder="Location 1 * (e.g. Austin, TX)" value={loc1} onChange={(e) => setLoc1(e.target.value)} />
                  <input className="w-full p-3.5 bg-white rounded-lg border border-[#82b8b9] focus:border-[#10899e] focus:ring-1 focus:ring-[#10899e] focus:outline-none transition-all placeholder-[#82b8b9] text-[#185e77] shadow-sm" placeholder="Location 2 (Optional)" value={loc2} onChange={(e) => setLoc2(e.target.value)} />
                  <input className="w-full p-3.5 bg-white rounded-lg border border-[#82b8b9] focus:border-[#10899e] focus:ring-1 focus:ring-[#10899e] focus:outline-none transition-all placeholder-[#82b8b9] text-[#185e77] shadow-sm" placeholder="Location 3 (Optional)" value={loc3} onChange={(e) => setLoc3(e.target.value)} />
                </>
