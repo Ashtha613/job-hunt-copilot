@@ -1,6 +1,8 @@
 "use client";
 import { useState } from "react";
 
+const API_BASE_URL = "https://job-hunt-copilot-egwq.onrender.com";
+
 export default function Home() {
   // --- STATE MANAGEMENT ---
   const [warning, setWarning] = useState("");
@@ -8,7 +10,8 @@ export default function Home() {
   const [suggestedRoles, setSuggestedRoles] = useState<string[]>([]);
   const [selectedRoles, setSelectedRoles] = useState<string[]>([]);
   
-  const [workModel, setWorkModel] = useState("Remote");
+  // UX FIX: Set default to On-site
+  const [workModel, setWorkModel] = useState("On-site");
   const [loc1, setLoc1] = useState("");
   const [loc2, setLoc2] = useState("");
   const [loc3, setLoc3] = useState("");
@@ -34,34 +37,31 @@ export default function Home() {
     formData.append("file", file);
 
     try {
-      const response = await fetch("https://job-hunt-copilot-egwq.onrender.com/upload-resume", {
+      const response = await fetch(`${API_BASE_URL}/upload-resume`, {
         method: "POST",
         body: formData,
       });
       const data = await response.json();
       
-      // FIX 1: Safely handle backend errors so undefined doesn't get saved to state
+      // UX FIX: Human-readable error mapping
       if (data.error) {
         const errorString = data.error.toLowerCase();
-        
-        // If the error mentions 429 or quota, show the friendly message
-        if (errorString.includes("429") || errorString.includes("quota")) {
-          setWarning("The free tier clocked out 😭 See you tomorrow.");
+        if (errorString.includes("429") || errorString.includes("quota") || errorString.includes("limit")) {
+          setWarning("You've hit your daily AI limit! The free tier clocked out 😭 See you tomorrow.");
+        } else if (errorString.includes("timeout")) {
+          setWarning("The server is taking too long to respond. Give it a few seconds and try again.");
         } else {
-          // Otherwise, show the normal error
-          setWarning(`Backend Error: ${data.error}`);
+          setWarning("Oops! Something went wrong behind the scenes while reading your resume. Please try again.");
         }
-        
         setSuggestedRoles([]);
         setResumeText("");
       } else {
         setResumeText(data.raw_text || "");
         setSuggestedRoles(data.suggested_roles || []); 
       }
-      
     } catch (error) {
       console.error(error);
-      setWarning("Failed to analyze resume. Check backend logs.");
+      setWarning("We couldn't connect to the server to analyze your resume. Please check your connection.");
     }
     setIsAnalyzing(false);
   };
@@ -77,13 +77,14 @@ export default function Home() {
     setJobs([]);
     
     if (selectedRoles.length === 0) {
-      alert("Please select at least one role!");
+      setWarning("Please select at least one target role before searching!");
       return;
     }
     
+    // UX FIX: Stricter location validation for On-site and Hybrid
     const activeLocations = [loc1, loc2, loc3].filter(l => l.trim() !== "");
-    if (workModel !== "Remote" && activeLocations.length === 0) {
-      alert(`Please enter at least one location for ${workModel} roles!`);
+    if (workModel !== "Remote" && !loc1.trim()) {
+      setWarning(`Please enter at least one primary city for your ${workModel} job search!`);
       return;
     }
     
@@ -95,54 +96,58 @@ export default function Home() {
          locationQuery += " in " + activeLocations.join(" OR ");
       }
       
-      const response = await fetch(`https://job-hunt-copilot-egwq.onrender.com/search-jobs?role=${combinedRoles}&location=${locationQuery}`);
+      const response = await fetch(`${API_BASE_URL}/search-jobs?role=${combinedRoles}&location=${locationQuery}`);
       const data = await response.json();
       
       if (!data.jobs_found || data.jobs_found.length === 0) {
-        setWarning("No jobs found for these criteria. Try different roles or locations.");
+        setWarning("We couldn't find any jobs matching those exact criteria right now. Try adjusting your roles or locations!");
       } else {
         setJobs(data.jobs_found);
       }
     } catch (error) {
       console.error(error);
-      setWarning("Could not connect to the job database. Check your server.");
+      setWarning("We couldn't reach the job database right now. Please wait a moment and try again.");
     }
     setIsScouting(false);
   };
 
   const generateColdEmail = async (job: any, index: number) => {
     if (!resumeText) {
-      alert("Please upload a resume first!");
+      setWarning("Please upload your resume in Step 1 first so we have context to write the email!");
       return;
     }
     setGeneratingIndex(index);
     setGeneratedEmail("");
+    setWarning("");
 
     try {
-      const keywordRes = await fetch("https://job-hunt-copilot-egwq.onrender.com/extract-keywords", {
+      const response = await fetch(`${API_BASE_URL}/generate-outreach`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ description: job.description })
-      });
-      const skills = (await keywordRes.json()).extracted_skills;
-
-      const alignRes = await fetch("https://job-hunt-copilot-egwq.onrender.com/align-resume", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ resume_text: resumeText, target_skills: skills })
-      });
-      const alignedPoints = (await alignRes.json()).aligned_resume;
-
-      const emailRes = await fetch("https://job-hunt-copilot-egwq.onrender.com/draft-email", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ company_name: job.company, role_title: job.title, resume_points: alignedPoints })
+        body: JSON.stringify({ 
+            job_description: job.description,
+            resume_text: resumeText,
+            company_name: job.company, 
+            role_title: job.title 
+        })
       });
       
-      setGeneratedEmail((await emailRes.json()).cold_email);
+      const data = await response.json();
+      
+      if (data.error) {
+        const errorString = data.error.toLowerCase();
+        if (errorString.includes("429") || errorString.includes("quota")) {
+          setWarning("You've hit your daily AI limit! The free tier clocked out 😭 See you tomorrow.");
+        } else {
+          setWarning("Our AI writer ran into a snag. Please try drafting the email again.");
+        }
+      } else {
+          setGeneratedEmail(data.cold_email);
+      }
+      
     } catch (error) {
       console.error(error);
-      alert("Error generating the email.");
+      setWarning("The AI writer lost its train of thought. Please check your connection and try again.");
     }
     setGeneratingIndex(null);
   };
@@ -174,10 +179,9 @@ export default function Home() {
              )}
            </div>
 
-           {/* FIX 2: Added optional chaining (?) to safely check length */}
            {suggestedRoles?.length > 0 && (
              <div className="bg-[#f0f6f7] p-5 rounded-xl border border-[#82b8b9]/40 mt-6">
-               <label className="block text-sm font-semibold mb-3 text-[#185e77] uppercase tracking-wider">Select Target Roles</label>
+               <label className="block text-sm font-semibold mb-3 text-[#185e77] uppercase tracking-wider">Select Target Roles <span className="text-red-500">*</span></label>
                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                  {suggestedRoles.map((role) => (
                    <label key={role} className="flex items-center space-x-3 bg-white p-3.5 rounded-lg cursor-pointer hover:border-[#10899e] border border-[#82b8b9]/50 transition-all shadow-sm">
@@ -200,7 +204,8 @@ export default function Home() {
            <div>
              <label className="block text-sm font-semibold mb-3 text-[#185e77] uppercase tracking-wider">Work Model</label>
              <div className="flex p-1 bg-[#f0f6f7] rounded-xl border border-[#82b8b9]/40">
-               {["Remote", "Hybrid", "On-site"].map(model => (
+               {/* UX FIX: Reordered sequence to On-site, Hybrid, Remote */}
+               {["On-site", "Hybrid", "Remote"].map(model => (
                  <button key={model} onClick={() => setWorkModel(model)} className={`flex-1 py-2.5 rounded-lg font-semibold text-sm transition-all duration-200 ${workModel === model ? "bg-white text-[#10899e] shadow-sm border border-[#82b8b9]/60" : "text-[#82b8b9] hover:text-[#185e77] hover:bg-white/50"}`}>
                    {model}
                  </button>
@@ -208,14 +213,28 @@ export default function Home() {
              </div>
            </div>
 
+           {/* UX FIX: Conditional Rendering for Locations based on Remote vs Hybrid/On-Site */}
            <div className="space-y-3">
-             <label className="block text-sm font-semibold mb-1 text-[#185e77] uppercase tracking-wider mt-4">{workModel === "Remote" ? "Preferred Timezones / Cities" : "Target Cities"}</label>
-             <input className="w-full p-3.5 bg-white rounded-lg border border-[#82b8b9] focus:border-[#10899e] focus:ring-1 focus:ring-[#10899e] focus:outline-none transition-all placeholder-[#82b8b9] text-[#185e77] shadow-sm" placeholder="Location 1 (e.g. Austin, TX)" value={loc1} onChange={(e) => setLoc1(e.target.value)} />
-             <input className="w-full p-3.5 bg-white rounded-lg border border-[#82b8b9] focus:border-[#10899e] focus:ring-1 focus:ring-[#10899e] focus:outline-none transition-all placeholder-[#82b8b9] text-[#185e77] shadow-sm" placeholder="Location 2 (Optional)" value={loc2} onChange={(e) => setLoc2(e.target.value)} />
-             <input className="w-full p-3.5 bg-white rounded-lg border border-[#82b8b9] focus:border-[#10899e] focus:ring-1 focus:ring-[#10899e] focus:outline-none transition-all placeholder-[#82b8b9] text-[#185e77] shadow-sm" placeholder="Location 3 (Optional)" value={loc3} onChange={(e) => setLoc3(e.target.value)} />
+             <label className="block text-sm font-semibold mb-1 text-[#185e77] uppercase tracking-wider mt-4">
+               {workModel === "Remote" ? (
+                 "Target Timezone / Region (Optional)"
+               ) : (
+                 <>Target Cities <span className="text-red-500">*</span></>
+               )}
+             </label>
+
+             {workModel === "Remote" ? (
+               <input className="w-full p-3.5 bg-white rounded-lg border border-[#82b8b9] focus:border-[#10899e] focus:ring-1 focus:ring-[#10899e] focus:outline-none transition-all placeholder-[#82b8b9] text-[#185e77] shadow-sm" placeholder="e.g. US Only, EST Timezone (Leave blank for global)" value={loc1} onChange={(e) => setLoc1(e.target.value)} />
+             ) : (
+               <>
+                 <input className="w-full p-3.5 bg-white rounded-lg border border-[#82b8b9] focus:border-[#10899e] focus:ring-1 focus:ring-[#10899e] focus:outline-none transition-all placeholder-[#82b8b9] text-[#185e77] shadow-sm" placeholder="Location 1 (Required, e.g. Austin, TX)" value={loc1} onChange={(e) => setLoc1(e.target.value)} />
+                 <input className="w-full p-3.5 bg-white rounded-lg border border-[#82b8b9] focus:border-[#10899e] focus:ring-1 focus:ring-[#10899e] focus:outline-none transition-all placeholder-[#82b8b9] text-[#185e77] shadow-sm" placeholder="Location 2 (Optional)" value={loc2} onChange={(e) => setLoc2(e.target.value)} />
+                 <input className="w-full p-3.5 bg-white rounded-lg border border-[#82b8b9] focus:border-[#10899e] focus:ring-1 focus:ring-[#10899e] focus:outline-none transition-all placeholder-[#82b8b9] text-[#185e77] shadow-sm" placeholder="Location 3 (Optional)" value={loc3} onChange={(e) => setLoc3(e.target.value)} />
+               </>
+             )}
            </div>
 
-           <button onClick={searchForJobs} disabled={isScouting || selectedRoles.length === 0} className="w-full bg-[#10899e] text-white hover:bg-[#185e77] disabled:bg-[#82b8b9]/40 disabled:text-white disabled:cursor-not-allowed font-bold py-4 px-4 rounded-xl transition-all mt-4 text-base tracking-wide shadow-sm">
+           <button onClick={searchForJobs} disabled={isScouting} className="w-full bg-[#10899e] text-white hover:bg-[#185e77] disabled:bg-[#82b8b9]/40 disabled:text-white disabled:cursor-not-allowed font-bold py-4 px-4 rounded-xl transition-all mt-4 text-base tracking-wide shadow-sm">
              {isScouting ? "Searching databases..." : "Run Job Search"}
            </button>
         </div>
