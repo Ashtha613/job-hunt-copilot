@@ -27,6 +27,12 @@ export default function Home() {
     const file = event.target.files?.[0];
     if (!file) return;
 
+    // FIX: Instantly block non-PDF files
+    if (file.type !== "application/pdf") {
+       setWarning("Invalid file format. Please upload a standard PDF resume.");
+       return;
+    }
+
     setIsAnalyzing(true);
     setWarning("");
     setSuggestedRoles([]);
@@ -49,7 +55,7 @@ export default function Home() {
         } else if (errorString.includes("timeout")) {
           setWarning("The server is taking too long to respond. Give it a few seconds and try again.");
         } else {
-          setWarning("Oops! Something went wrong behind the scenes while reading your resume. Please try again.");
+          setWarning(data.error); // Now correctly displays our custom PDF/page limit errors
         }
         setSuggestedRoles([]);
         setResumeText("");
@@ -129,6 +135,13 @@ export default function Home() {
         })
       });
       
+      // FIX: Check for HTTP errors before trying to parse JSON that might be broken
+      if (!response.ok) {
+         const errorData = await response.json().catch(() => null);
+         const errorMsg = errorData?.detail || errorData?.error || "Server error";
+         throw new Error(errorMsg);
+      }
+      
       const data = await response.json();
       
       if (data.error) {
@@ -136,15 +149,15 @@ export default function Home() {
         if (errorString.includes("429") || errorString.includes("quota")) {
           setWarning("You've hit your daily AI limit! The free tier clocked out 😭 See you tomorrow.");
         } else {
-          setWarning("Our AI writer ran into a snag. Please try drafting the email again.");
+          setWarning(`Our AI writer ran into a snag: ${data.error}`);
         }
       } else {
           setGeneratedEmail(data.cold_email);
       }
       
-    } catch (error) {
+    } catch (error: any) {
       console.error(error);
-      setWarning("The AI writer lost its train of thought. Please check your connection and try again.");
+      setWarning(`The AI writer lost its train of thought: ${error.message}. Please try again.`);
     }
     setGeneratingIndex(null);
   };
@@ -178,7 +191,6 @@ export default function Home() {
 
            {suggestedRoles?.length > 0 && (
              <div className="bg-[#f0f6f7] p-5 rounded-xl border border-[#82b8b9]/40 mt-6">
-               {/* Moved * next to the label */}
                <label className="block text-sm font-semibold text-[#185e77] uppercase tracking-wider">
                  Select Target Roles <span className="text-red-500">*</span>
                </label>

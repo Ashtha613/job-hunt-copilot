@@ -22,6 +22,7 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
+# Keeping the correct 2026 model!
 model = genai.GenerativeModel('gemini-3.5-flash')
 
 class UnifiedEmailRequest(BaseModel):
@@ -43,23 +44,33 @@ async def upload_resume(file: UploadFile = File(...)):
         contents = await file.read()
         pdf_reader = PyPDF2.PdfReader(io.BytesIO(contents))
         
+        # FIX: Check for 2-page limit
+        if len(pdf_reader.pages) > 2:
+            return {"error": "File too long! Please upload a resume with a maximum of 2 pages."}
+        
         resume_text = "".join(page.extract_text() or "" for page in pdf_reader.pages)
+
+        if len(resume_text.strip()) < 50:
+             return {"error": "We couldn't read the text in this PDF. It might be an image-based scan or empty."}
 
         print("🚦 2. PDF read successfully! Sending to AI...")
         
+        # FIX: Added rule to detect if the text is actually a resume
         prompt = f"""
-        You are an expert technical recruiter. Analyze the following resume text and first determine the candidate's exact years of experience and career level (e.g., Entry-level, Junior, Mid-level, Senior). 
+        You are an expert technical recruiter. Analyze the following text. 
         
-        Based strictly on their actual demonstrated experience, suggest 5 realistic job titles they are currently eligible for. 
+        CRITICAL FIRST STEP: Determine if the text is actually a resume or CV. If it is NOT a resume (e.g., a random document, a syllabus, or an article), respond ONLY with the exact JSON array: ["INVALID_RESUME"]. Do not include any other text.
+        
+        If it IS a resume, determine the candidate's exact years of experience and suggest 5 realistic job titles they are currently eligible for. 
         
         CRITICAL RULES:
-        - If they have under 2 years of experience (or are a student/recent grad), you MUST prefix EVERY single suggestion with "Junior" or "Entry-Level" (e.g., "Junior React Developer"). You are strictly forbidden from suggesting standard roles (like "Software Engineer") without these prefixes for beginners.
-        - Do NOT suggest "Senior", "Lead", "Principal", or "Manager" roles unless the resume clearly shows 5+ years of relevant experience.
+        - If they have under 2 years of experience, you MUST prefix EVERY single suggestion with "Junior" or "Entry-Level" (e.g., "Junior React Developer"). 
+        - Do NOT suggest "Senior", "Lead", "Principal", or "Manager" roles unless they have 5+ years of relevant experience.
         
-        Respond ONLY with a raw JSON array of strings. Do not include markdown, backticks, or any conversational text.
-        Example output: ["Junior Frontend Developer", "Entry-Level React Developer", "Junior Web Developer"]
+        Respond ONLY with a raw JSON array of strings. Do not include markdown or backticks.
+        Example output: ["Junior Frontend Developer", "Entry-Level React Developer"]
         
-        Resume text:
+        Text to analyze:
         {resume_text}
         """
         
@@ -68,6 +79,10 @@ async def upload_resume(file: UploadFile = File(...)):
         
         cleaned_response = response.text.strip().replace('```json', '').replace('```', '')
         suggested_roles = json.loads(cleaned_response)
+        
+        # FIX: Block invalid resumes from progressing
+        if "INVALID_RESUME" in suggested_roles:
+             return {"error": "This document doesn't look like a valid resume. Please upload a correct resume file."}
         
         print("🚦 4. Ready to send back to frontend!")
         return {
@@ -154,22 +169,40 @@ async def search_jobs(role: str, location: str):
 # --- NODE 2 (THE OUTREACH AGENT) ---
 @app.post("/generate-outreach")
 def generate_outreach(data: UnifiedEmailRequest):
-    prompt = f"""
-    You are an elite Career Coach and Technical Recruiter. 
-    Perform the following workflow based on the provided Job Description and Resume:
-    
-    1. Identify the top 3-4 core technical skills required for the role.
-    2. Mentally cross-reference these skills with the candidate's actual experience in the Resume.
-    3. Draft a highly professional, confident, and polite cold outreach email (under 150 words) to a recruiter at {data.company_name} for the {data.role_title} role.
-    4. In the email, explicitly highlight 1-2 projects/points from the resume that perfectly align with those core skills.
-    
-    Job Description:
-    {data.job_description}
-    
-    Resume Text:
-    {data.resume_text}
-    
-    Output ONLY the final email text. Use a placeholder for the user's signature.
-    """
-    response = model.generate_content(prompt)
-    return {"cold_email": response.text.strip()}
+    # FIX: Added try/except and lowered safety settings so it stops failing silently!
+    try:
+        prompt = f"""
+        You are an elite Career Coach and Technical Recruiter. 
+        Perform the following workflow based on the provided Job Description and Resume:
+        
+        1. Identify the top 3-4 core technical skills required for the role.
+        2. Mentally cross-reference these skills with the candidate's actual experience in the Resume.
+        3. Draft a highly professional, confident, and polite cold outreach email (under 150 words) to a recruiter at {data.company_name} for the {data.role_title} role.
+        4. In the email, explicitly highlight 1-2 projects/points from the resume that perfectly align with those core skills.
+        
+        Job Description:
+        {data.job_description}
+        
+        Resume Text:
+        {data.resume_text}
+        
+        Output ONLY the final email text. Use a placeholder for the user's signature.
+        """
+        
+        response = model.generate_content(
+            prompt,
+            safety_settings={
+                "HARM_CATEGORY_HARASSMENT": "BLOCK_NONE",
+                "HARM_CATEGORY_HATE_SPEECH": "BLOCK_NONE",
+                "HARM_CATEGORY_SEXUALLY_EXPLICIT": "BLOCK_NONE",
+                "HARM_CATEGORY_DANGEROUS_CONTENT": "BLOCK_NONE"
+            }
+        )
+        
+        if not response.parts:
+            raise ValueError("The AI blocked the response. Please try again.")
+            
+        return {"cold_email": response.text.strip()}
+    except Exception as e:
+        print(f"❌ Error during email drafting: {e}")
+        return {"error": "Failed to draft email. " + str(e)}
