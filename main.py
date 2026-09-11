@@ -95,6 +95,7 @@ async def upload_resume(file: UploadFile = File(...)):
         return {"error": str(e)}
 
 # --- NODE 1 (THE SCOUT) ---
+# --- NODE 1 (THE SCOUT) ---
 async def fetch_jobs(search_query: str, is_remote: bool):
     params = {
         "engine": "google_jobs",
@@ -108,7 +109,19 @@ async def fetch_jobs(search_query: str, is_remote: bool):
         
     async with httpx.AsyncClient() as client:
         response = await client.get("https://serpapi.com/search", params=params)
-        return response.json()
+        data = response.json()
+        
+        # DEBUGGING: Print the exact response to Render Logs
+        print(f"🔍 SEARCH QUERY: '{search_query}'")
+        print(f"🔍 SERPAPI STATUS: {data.get('search_metadata', {}).get('status', 'Unknown')}")
+        if "jobs_results" not in data:
+            print(f"❌ NO JOBS FOUND. Available keys from SerpApi: {list(data.keys())}")
+            if "error" in data:
+                print(f"❌ SERPAPI ERROR: {data['error']}")
+        else:
+            print(f"✅ FOUND {len(data['jobs_results'])} JOBS!")
+            
+        return data
 
 @app.get("/search-jobs")
 async def search_jobs(role: str, location: str):
@@ -126,11 +139,11 @@ async def search_jobs(role: str, location: str):
     
     for single_role in target_roles:
         for single_loc in target_locations:
-            
             query = single_role
             
-            if "junior" in single_role.lower() or "entry" in single_role.lower() or "intern" in single_role.lower():
-                query += " -senior -lead -principal -manager -director"
+            # 🛑 DISABLED NEGATIVE KEYWORDS: Google Jobs often chokes on these now
+            # if "junior" in single_role.lower() or "entry" in single_role.lower() or "intern" in single_role.lower():
+            #     query += " -senior -lead -principal -manager -director"
             
             if single_loc:
                 query += f" in {single_loc}"
