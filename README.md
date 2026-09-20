@@ -22,11 +22,11 @@ Job hunting involves a lot of repetitive work: figuring out which titles you're 
 
 <!-- Add your screenshots to a screenshots/ folder and they'll render here. -->
 
-![Resume profiler and role selection](screenshots/profiler.png)
+![Resume profiler and role selection](profiler.png)
 
-![Job search and results](screenshots/search.png)
+![Job search and results](search.png)
 
-![Generated outreach email](screenshots/outreach.png)
+![Generated outreach email](outreach.png)
 
 ---
 
