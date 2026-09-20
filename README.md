@@ -1,6 +1,6 @@
 # Job Hunt Copilot
 
-An AI-powered job search assistant that turns your resume into a targeted job search and personalized recruiter outreach.
+An AI job search assistant that turns a resume PDF into targeted job matches and personalized recruiter outreach.
 
 **Live demo:** [job-hunt-copilot-nine.vercel.app](https://job-hunt-copilot-nine.vercel.app/)
 
@@ -8,19 +8,25 @@ An AI-powered job search assistant that turns your resume into a targeted job se
 
 ## What it does
 
-Job hunting involves a lot of repetitive work: figuring out which titles to search for, running the same search across multiple roles and locations, and writing outreach emails one at a time. This app handles all three from a single resume upload.
+Job hunting involves a lot of repetitive work: figuring out which titles you're actually eligible for, running the same search across several roles and cities, and writing outreach one email at a time. This app handles all three from a single resume upload.
 
-1. **Upload a resume** — the app parses the PDF, verifies it's actually a resume, and uses the Gemini API to infer your experience level and suggest job titles worth targeting.
-2. **Search across roles and locations** — queries SerpApi for every role/location combination at once and returns a consolidated feed, with a remote-only filter.
-3. **Generate outreach** — for any job in the results, generates a personalized recruiter email grounded in both the job description and your resume.
+**1. AI Resume Profiler** — Upload a resume PDF. The backend extracts the text, validates it's genuinely a resume, and asks Gemini to infer the candidate's experience level and suggest five realistic job titles. Seniority is constrained by experience, so a candidate with under two years only ever sees Junior and Entry-Level suggestions.
+
+**2. Job Search** — Pick target roles and up to three cities, or switch to Remote. The backend fans out every role × location combination as concurrent requests to SerpApi's Google Jobs engine, deduplicates the results, and returns a single consolidated feed.
+
+**3. Outreach Generator** — For any job in the results, Gemini drafts a cold outreach email under 150 words, cross-referencing the job description's core requirements against the candidate's actual projects.
 
 ---
 
 ## Screenshots
 
-<!-- TODO: add 2–3 screenshots or a short GIF of the flow.
-     Put them in a /screenshots folder and reference them like:
-     ![Resume upload](screenshots/upload.png) -->
+<!-- Add your screenshots to a screenshots/ folder and they'll render here. -->
+
+![Resume profiler and role selection](screenshots/profiler.png)
+
+![Job search and results](screenshots/search.png)
+
+![Generated outreach email](screenshots/outreach.png)
 
 ---
 
@@ -28,12 +34,13 @@ Job hunting involves a lot of repetitive work: figuring out which titles to sear
 
 | Layer | Stack |
 |---|---|
-| Frontend | React (Vite) |
-| Backend | FastAPI (Python) |
-| AI | Google Gemini API |
-| Job data | SerpApi (Google Jobs) |
-| PDF parsing | <!-- TODO: PyPDF2 / pdfplumber / whichever you used --> |
-| Deployment | Vercel |
+| Frontend | Next.js (App Router), TypeScript, Tailwind CSS |
+| Backend | FastAPI, Python |
+| AI | Google Gemini (`google-generativeai`) |
+| Job data | SerpApi — Google Jobs engine |
+| PDF parsing | PyPDF2 |
+| HTTP client | httpx (async) |
+| Hosting | Frontend on Vercel, backend on Render |
 
 ---
 
@@ -41,22 +48,27 @@ Job hunting involves a lot of repetitive work: figuring out which titles to sear
 
 ```
 job-hunt-copilot/
-├── frontend/           # React + Vite client
-├── main.py             # FastAPI app — API routes
+├── frontend/           # Next.js client (App Router, TypeScript, Tailwind)
+├── main.py             # FastAPI app — all API routes
 └── requirements.txt    # Python dependencies
 ```
 
-The React client talks to the FastAPI backend over REST. All third-party API keys (Gemini, SerpApi) are held server-side and never exposed to the browser.
+The Next.js client is a single-page stepped flow holding all state client-side; it calls the FastAPI backend over REST. Both API keys (Gemini, SerpApi) live server-side only and are never exposed to the browser.
 
-### API endpoints
-
-<!-- TODO: fill in your actual routes and payloads. Example format: -->
+### API
 
 | Method | Route | Purpose |
 |---|---|---|
-| `POST` | `/upload-resume` | Parse and validate a resume PDF, return suggested job titles |
-| `POST` | `/search-jobs` | Fetch jobs for the given roles and locations |
-| `POST` | `/generate-email` | Generate a recruiter email from a resume and job description |
+| `GET` | `/` | Health check |
+| `POST` | `/upload-resume` | Accepts a PDF upload; returns extracted text and five suggested job titles |
+| `GET` | `/search-jobs` | Query params `role` and `location`; returns a deduplicated job feed |
+| `POST` | `/generate-outreach` | Accepts job description, resume text, company, and role; returns a drafted email |
+
+**`POST /upload-resume`** — multipart file upload. Rejects PDFs over two pages, rejects documents whose extracted text is under 50 characters (image-based scans), and prompts Gemini to return the sentinel `["INVALID_RESUME"]` for documents that aren't resumes, which the handler catches before anything reaches the frontend.
+
+**`GET /search-jobs`** — roles arrive pipe-joined as `"Role A OR Role B"` and locations as `"On-site in City A OR City B"`. The handler splits both, builds one SerpApi task per role × location pair, and runs them with `asyncio.gather`. Results are deduplicated on a `title-company` key and capped at ten per query.
+
+**`POST /generate-outreach`** — JSON body validated by a Pydantic model (`job_description`, `resume_text`, `company_name`, `role_title`).
 
 ---
 
@@ -83,7 +95,7 @@ Create a `.env` file in the project root:
 
 ```env
 GEMINI_API_KEY=your_gemini_key_here
-SERPAPI_API_KEY=your_serpapi_key_here
+SERPAPI_KEY=your_serpapi_key_here
 ```
 
 Start the server:
@@ -92,7 +104,7 @@ Start the server:
 uvicorn main:app --reload
 ```
 
-The API runs at `http://localhost:8000`. Interactive docs are available at `http://localhost:8000/docs`.
+The API runs at `http://localhost:8000`, with interactive docs at `http://localhost:8000/docs`.
 
 ### Frontend
 
@@ -102,24 +114,38 @@ npm install
 npm run dev
 ```
 
-The client runs at `http://localhost:5173`.
+The client runs at `http://localhost:3000`. To point it at your local backend, change `API_BASE_URL` in `app/page.tsx` to `http://localhost:8000`.
 
 ---
 
 ## Design notes
 
-- **FastAPI** was chosen for its native async support, automatic OpenAPI documentation, and Pydantic-based request validation.
-- **Resume validation** happens before any AI call — non-resume PDFs are rejected early rather than being sent to the model, which avoids wasted API quota and nonsensical output.
-- **Keys stay server-side.** The frontend never holds an API key; all third-party calls are proxied through the backend.
+**Validation happens before the AI call, not after.** Page count and extracted-text length are checked in Python first, so malformed uploads never consume API quota. Only the "is this actually a resume?" question needs the model, and it's answered with a sentinel value the handler checks explicitly rather than by parsing prose.
+
+**Seniority is constrained in the prompt.** Left unconstrained, the model suggested senior and lead titles to candidates with no experience. The prompt now requires a Junior or Entry-Level prefix below two years and forbids senior titles below five.
+
+**Search is concurrent, not sequential.** Three roles across three cities is nine SerpApi calls; run in sequence that's a multi-second wait. `asyncio.gather` over `httpx.AsyncClient` collapses it to roughly the latency of the slowest single call, with `return_exceptions=True` so one failed query doesn't take down the whole search.
+
+**Errors surface as messages, not stack traces.** The frontend inspects error strings for quota and timeout conditions and renders a human-readable banner, rather than leaving the user with a spinner that never resolves.
+
+---
+
+## Known limitations
+
+- CORS is currently open to all origins — fine for a demo, would be restricted to the deployed frontend domain in production.
+- Nothing is persisted; searches and generated emails are lost on refresh.
+- The free Gemini tier has a daily request cap, which the UI surfaces when hit.
+- SerpApi results are capped at ten jobs per query.
 
 ---
 
 ## Roadmap
 
-- [ ] Persist search history and saved jobs
+- [ ] Persist saved jobs and search history in PostgreSQL
+- [ ] Restrict CORS to the deployed frontend origin
 - [ ] Support DOCX resumes alongside PDF
 - [ ] Batch email generation across multiple listings
-- [ ] Application tracking
+- [ ] Application status tracking
 
 ---
 
@@ -127,4 +153,4 @@ The client runs at `http://localhost:5173`.
 
 **Ashtha Kumari**
 
-[GitHub](https://github.com/Ashtha613)
+[GitHub](https://github.com/Ashtha613) · [Codeforces](https://codeforces.com/profile/Aashthaa)
